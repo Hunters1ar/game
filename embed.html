@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScriptRunner 3D Embed</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #0b1118;
+            color: #ecf5f2;
+            font-family: system-ui, sans-serif;
+        }
+
+        .wrap {
+            width: min(1200px, 100vw);
+            padding: 16px;
+        }
+
+        .game-frame {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            min-height: 620px;
+            border: 0;
+            border-radius: 10px;
+            background: #061014;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+        }
+
+        @media (max-width: 760px) {
+            .wrap {
+                padding: 0;
+            }
+
+            .game-frame {
+                width: 100vw;
+                height: 100vh;
+                min-height: 0;
+                border-radius: 0;
+                aspect-ratio: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <iframe
+            class="game-frame"
+            title="ScriptRunner 3D"
+            src="./index.html?embed=1"
+            allow="fullscreen; gamepad; autoplay"
+            allowfullscreen>
+        </iframe>
+    </div>
+</body>
+</html>

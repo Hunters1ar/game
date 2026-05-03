@@ -1,0 +1,11 @@
+{
+  "name": "script-runner-3d",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python -m http.server 5173",
+    "check": "node --check src/main.js && node --check src/engine.js && node --check src/parser.js && node --check src/renderer.js",
+    "zip": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Compress-Archive -Force -Path index.html,embed.html,styles.css,EMBED.md,package.json,src,vendor -DestinationPath scriptrunner3d-html5.zip\""
+  }
+}

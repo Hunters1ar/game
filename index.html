@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>ScriptRunner 3D</title>
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            if (params.get("embed") === "1") document.documentElement.classList.add("embed-mode");
+            if (params.get("compact") === "1") document.documentElement.classList.add("compact-mode");
+        }());
+    </script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "./vendor/three/three.module.js",
+                "three/addons/": "./vendor/three/addons/"
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark"><i class="fa-solid fa-cube"></i></div>
+                <div>
+                    <h1>ScriptRunner 3D</h1>
+                    <small id="floorLabel">Floor 1</small>
+                </div>
+            </div>
+            <div class="level-strip" id="levelBtns" aria-label="Level selector"></div>
+            <div class="top-actions">
+                <button class="icon-btn" id="btnReference" title="Command reference" aria-label="Command reference"><i class="fa-solid fa-book"></i></button>
+                <button class="icon-btn" id="btnSettings" title="Game settings" aria-label="Game settings"><i class="fa-solid fa-sliders"></i></button>
+            </div>
+        </header>
+
+        <main class="layout">
+            <section class="stage-panel">
+                <div class="stage-info">
+                    <div class="mission">
+                        <div class="mission-title">
+                            <strong id="levelName">Loading</strong>
+                            <span class="pill"><i class="fa-solid fa-location-dot"></i><span id="levelSize">0 x 0</span></span>
+                            <span class="pill"><i class="fa-solid fa-bolt"></i><span id="powerStat">0/0</span></span>
+                            <span class="pill"><i class="fa-solid fa-shield-halved"></i><span id="guardStat">0</span></span>
+                        </div>
+                        <p class="mission-copy" id="missionText"></p>
+                    </div>
+                    <div class="stat-row">
+                        <div class="stat"><b id="chipStat">0/0</b><span>Data</span></div>
+                        <div class="stat"><b id="actionStat">0</b><span>Actions</span></div>
+                        <div class="stat"><b id="starStat">0</b><span>Stars</span></div>
+                        <div class="stat"><b id="budgetStat">0</b><span>3-star</span></div>
+                    </div>
+                </div>
+
+                <div class="scene-host" id="sceneHost">
+                    <canvas id="gameCanvas" aria-label="Three dimensional puzzle board"></canvas>
+                    <div class="scene-caption"><i class="fa-solid fa-satellite-dish"></i><span id="npcLine">Systems online.</span></div>
+                </div>
+
+                <div class="mobile-drive" id="drivePad">
+                    <span></span>
+                    <button class="drive-btn" data-drive="forward" aria-label="Move forward"><i class="fa-solid fa-arrow-up"></i></button>
+                    <span></span>
+                    <button class="drive-btn" data-drive="left" aria-label="Turn left"><i class="fa-solid fa-arrow-left"></i></button>
+                    <button class="drive-btn" data-drive="use" aria-label="Use"><i class="fa-solid fa-hand"></i></button>
+                    <button class="drive-btn" data-drive="right" aria-label="Turn right"><i class="fa-solid fa-arrow-right"></i></button>
+                    <button class="drive-btn" data-drive="shoot" aria-label="Shoot"><i class="fa-solid fa-bullseye"></i></button>
+                    <button class="drive-btn" data-drive="wait" aria-label="Wait"><i class="fa-solid fa-hourglass-half"></i></button>
+                    <span></span>
+                </div>
+            </section>
+
+            <aside class="control-panel">
+                <div class="operator">
+                    <div class="operator-avatar">
+                        <img src="character.png" alt="Hunterstar portrait" onerror="this.style.display='none'">
+                        <i class="fa-solid fa-user-astronaut"></i>
+                    </div>
+                    <div>
+                        <h2>Hunterstar</h2>
+                        <p id="operatorLine">Route the platform, power the systems, and reach the exit gate.</p>
+                    </div>
+                </div>
+
+                <div class="unlock-card">
+                    <span>New method</span>
+                    <b id="newMethodLabel">MoveForward()</b>
+                </div>
+
+                <div class="command-tray" id="commandTray"></div>
+
+                <div class="editor-shell">
+                    <div class="editor-title">
+                        <span class="dot" style="background:#ff6159"></span>
+                        <span class="dot" style="background:#ffc857"></span>
+                        <span class="dot" style="background:#64e06b"></span>
+                        <span style="margin-left:6px">mission.script</span>
+                    </div>
+                    <div class="editor-body">
+                        <div class="line-nums" id="lineNums"></div>
+                        <textarea class="code-area" id="codeArea" spellcheck="false"></textarea>
+                    </div>
+                </div>
+
+                <div class="action-row">
+                    <button class="action-btn run-btn" id="btnRun"><i class="fa-solid fa-play"></i>Run</button>
+                    <button class="action-btn reset-btn" id="btnReset"><i class="fa-solid fa-rotate-left"></i>Reset</button>
+                    <button class="action-btn mini-btn" id="btnCamera" title="Cycle camera" aria-label="Cycle camera"><i class="fa-solid fa-video"></i></button>
+                </div>
+
+                <div class="console" id="console"></div>
+            </aside>
+        </main>
+    </div>
+
+    <div class="modal-backdrop" id="settingsModal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+            <div class="modal-head">
+                <h3 id="settingsTitle">Game Settings</h3>
+                <button class="icon-btn" data-close="settingsModal" aria-label="Close settings"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="setting">
+                    <label for="speedRange">Animation speed</label>
+                    <input id="speedRange" type="range" min="0.6" max="2.4" step="0.1">
+                </div>
+                <div class="setting">
+                    <label for="cameraMode">Camera</label>
+                    <select id="cameraMode">
+                        <option value="orbit">Orbit</option>
+                        <option value="cinematic">Cinematic</option>
+                        <option value="chase">Chase</option>
+                        <option value="top">Top</option>
+                    </select>
+                </div>
+                <div class="setting">
+                    <label for="qualityMode">Render quality</label>
+                    <select id="qualityMode">
+                        <option value="balanced">Balanced</option>
+                        <option value="sharp">Sharp</option>
+                        <option value="light">Light</option>
+                    </select>
+                </div>
+                <div class="setting">
+                    <label for="showPath">Preview path</label>
+                    <input id="showPath" type="checkbox">
+                </div>
+                <div class="setting">
+                    <label for="freeRun">Free run controls</label>
+                    <input id="freeRun" type="checkbox">
+                </div>
+                <div class="setting">
+                    <label for="soundOn">Sound</label>
+                    <input id="soundOn" type="checkbox">
+                </div>
+                <button class="danger-btn" id="btnResetProgress"><i class="fa-solid fa-trash"></i>Reset progress</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="referenceModal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="referenceTitle">
+            <div class="modal-head">
+                <h3 id="referenceTitle">Command Reference</h3>
+                <button class="icon-btn" data-close="referenceModal" aria-label="Close reference"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body ref-list" id="referenceList"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
