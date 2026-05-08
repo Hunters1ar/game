@@ -4,7 +4,7 @@ const SETTINGS_KEY = "scriptRunner3dSettingsV2";
 export const DEFAULT_SETTINGS = {
     speed: 1.15,
     camera: "orbit",
-    quality: "balanced",
+    quality: "light",
     showPath: true,
     freeRun: false,
     sound: true

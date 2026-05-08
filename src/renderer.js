@@ -1,19 +1,38 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { DIRS, bridgeAt, doorAt, laserAt, requiresAreOn, switchAt } from "./engine.js";
+
+const MODEL_ASSETS = {
+    player: {
+        url: "vendor/3d%20model%20for%20robot/source/deadnaut.glb",
+        targetHeight: 2.18,
+        yOffset: -.18,
+        rotation: [0, Math.PI, 0]
+    },
+    exit: {
+        url: "vendor/server_rack/scene.gltf",
+        targetHeight: 2.05,
+        yOffset: -.36,
+        rotation: [0, Math.PI, 0]
+    }
+};
 
 export class GameRenderer {
     constructor({ canvas, host, settings }) {
         this.canvas = canvas;
         this.host = host;
         this.settings = settings;
-        this.cell = 2.25;
+        this.cell = 2.72;
+        this.tileSize = 2.38;
         this.baseY = 0.34;
         this.level = null;
         this.state = null;
         this.tweens = [];
         this.particles = [];
         this.pathMarkers = [];
+        this.environmentStrips = [];
         this.clock = new THREE.Clock();
 
         this.scene = new THREE.Scene();
@@ -21,10 +40,11 @@ export class GameRenderer {
         this.scene.fog = new THREE.Fog(0x071014, 22, 48);
 
         this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 140);
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.applyRenderQuality();
 
         this.controls = new OrbitControls(this.camera, canvas);
         this.controls.enableDamping = true;
@@ -56,6 +76,13 @@ export class GameRenderer {
         };
 
         this.textureLoader = new THREE.TextureLoader();
+        this.gltfLoader = new GLTFLoader();
+        this.modelAssets = Object.fromEntries(Object.entries(MODEL_ASSETS).map(([key, config]) => [key, {
+            ...config,
+            scene: null,
+            promise: null,
+            failed: false
+        }]));
         this.heroTexture = this.makeHeroFallbackTexture();
         this.textureLoader.load("character.png", (texture) => {
             texture.colorSpace = THREE.SRGBColorSpace;
@@ -65,6 +92,7 @@ export class GameRenderer {
                 this.objects.player.userData.sprite.material.needsUpdate = true;
             }
         });
+        Object.keys(this.modelAssets).forEach((key) => this.preloadModel(key));
         this.mats = this.makeMaterials();
         this.setupLights();
         this.resize();
@@ -96,7 +124,11 @@ export class GameRenderer {
             path: new THREE.MeshBasicMaterial({ color: 0x99ffdf, transparent: true, opacity: .36, depthWrite: false }),
             bridgeOff: new THREE.MeshStandardMaterial({ color: 0x0b1118, transparent: true, opacity: .28, roughness: .72, metalness: .22 }),
             laser: new THREE.MeshBasicMaterial({ color: 0xff4d5f, transparent: true, opacity: .72, depthWrite: false }),
-            portal: new THREE.MeshStandardMaterial({ color: 0x17d6c3, emissive: 0x17d6c3, emissiveIntensity: .65, roughness: .22, metalness: .18 })
+            portal: new THREE.MeshStandardMaterial({ color: 0x17d6c3, emissive: 0x17d6c3, emissiveIntensity: .65, roughness: .22, metalness: .18 }),
+            neon: new THREE.MeshBasicMaterial({ color: 0x17d6c3, transparent: true, opacity: .7 }),
+            amberNeon: new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: .74 }),
+            darkPanel: new THREE.MeshStandardMaterial({ color: 0x0b1118, roughness: .8, metalness: .25 }),
+            shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .28, depthWrite: false })
         };
         Object.values(shared).forEach((mat) => {
             mat.userData.shared = true;
@@ -109,7 +141,8 @@ export class GameRenderer {
         const key = new THREE.DirectionalLight(0xffffff, 2.25);
         key.position.set(8, 14, -10);
         key.castShadow = true;
-        key.shadow.mapSize.set(2048, 2048);
+        key.shadow.mapSize.set(1024, 1024);
+        key.shadow.bias = -.0005;
         key.shadow.camera.left = -22;
         key.shadow.camera.right = 22;
         key.shadow.camera.top = 22;
@@ -131,6 +164,7 @@ export class GameRenderer {
         this.clearGroup(this.fxGroup);
         this.pathMarkers = [];
         this.particles = [];
+        this.environmentStrips = [];
         this.objects = {
             tiles: [],
             bridges: [],
@@ -154,7 +188,7 @@ export class GameRenderer {
     }
 
     buildBoard(level) {
-        const tileGeo = new THREE.BoxGeometry(1.96, .34, 1.96);
+        const tileGeo = new THREE.BoxGeometry(this.tileSize, .34, this.tileSize);
         const edgeGeo = new THREE.EdgesGeometry(tileGeo);
         const offset = this.offset(level.grid);
         for (let y = 0; y < level.grid; y++) {
@@ -180,6 +214,63 @@ export class GameRenderer {
         under.position.y = -.36;
         under.receiveShadow = true;
         this.boardGroup.add(under);
+        this.createArenaEnvironment(level);
+    }
+
+    createArenaEnvironment(level) {
+        const span = (level.grid - 1) * this.cell + this.tileSize;
+        const outer = span + 2.2;
+        const half = outer / 2;
+        const deck = new THREE.Mesh(
+            new THREE.BoxGeometry(outer, .12, outer),
+            this.mats.darkPanel
+        );
+        deck.position.y = -.58;
+        deck.receiveShadow = true;
+        this.boardGroup.add(deck);
+
+        const railLong = new THREE.BoxGeometry(outer, .08, .12);
+        const railShort = new THREE.BoxGeometry(.12, .08, outer);
+        [
+            [0, .06, -half, railLong, this.mats.neon],
+            [0, .06, half, railLong, this.mats.neon],
+            [-half, .06, 0, railShort, this.mats.neon],
+            [half, .06, 0, railShort, this.mats.neon]
+        ].forEach(([x, y, z, geo, mat]) => {
+            const rail = new THREE.Mesh(geo, mat);
+            rail.position.set(x, y, z);
+            this.boardGroup.add(rail);
+        });
+
+        const pulseMatA = this.mats.neon.clone();
+        const pulseMatB = this.mats.amberNeon.clone();
+        const laneGeo = new THREE.BoxGeometry(.08, .035, outer - 1.4);
+        for (let i = -2; i <= 2; i++) {
+            const lane = new THREE.Mesh(laneGeo, i % 2 ? pulseMatA.clone() : pulseMatB.clone());
+            lane.position.set(i * this.cell * .82, -.48, 0);
+            lane.userData.phase = i * .7;
+            this.boardGroup.add(lane);
+            this.environmentStrips.push(lane);
+        }
+
+        const pylonGeo = new THREE.BoxGeometry(.42, .9, .42);
+        const capGeo = new THREE.BoxGeometry(.7, .08, .7);
+        [
+            [-half, -half],
+            [half, -half],
+            [-half, half],
+            [half, half]
+        ].forEach(([x, z], index) => {
+            const pylon = new THREE.Group();
+            const body = new THREE.Mesh(pylonGeo, this.mats.darkPanel);
+            body.position.y = -.08;
+            const cap = new THREE.Mesh(capGeo, index % 2 ? this.mats.amberNeon : this.mats.neon);
+            cap.position.y = .4;
+            pylon.add(body, cap);
+            pylon.position.set(x, 0, z);
+            this.boardGroup.add(pylon);
+            this.environmentStrips.push(cap);
+        });
     }
 
     buildEntities(level) {
@@ -192,6 +283,7 @@ export class GameRenderer {
         (level.chips || []).forEach((chip, index) => {
             const mesh = this.createChip(index);
             mesh.position.copy(this.gridToWorld(chip.x, chip.y, .92));
+            mesh.userData.onExit = chip.x === level.exit.x && chip.y === level.exit.y;
             this.entityGroup.add(mesh);
             this.objects.chips.push(mesh);
         });
@@ -269,9 +361,12 @@ export class GameRenderer {
         const group = new THREE.Group();
         const gem = new THREE.Mesh(new THREE.OctahedronGeometry(.42, 0), this.mats.chip);
         gem.castShadow = true;
-        const glow = new THREE.PointLight(0xffc857, 2.2, 4);
-        glow.position.y = .05;
-        group.add(gem, glow);
+        const halo = new THREE.Mesh(
+            new THREE.CylinderGeometry(.52, .52, .035, 28),
+            new THREE.MeshBasicMaterial({ color: 0xffc857, transparent: true, opacity: .2, depthWrite: false })
+        );
+        halo.position.y = -.43;
+        group.add(gem, halo);
         group.userData.index = index;
         return group;
     }
@@ -393,19 +488,25 @@ export class GameRenderer {
 
     createPortal() {
         const group = new THREE.Group();
+        const fallback = new THREE.Group();
         const ring = new THREE.Mesh(new THREE.TorusGeometry(.64, .065, 14, 54), this.mats.portal);
         ring.rotation.x = Math.PI / 2;
         ring.castShadow = true;
         const pad = new THREE.Mesh(new THREE.CylinderGeometry(.72, .72, .10, 48), new THREE.MeshBasicMaterial({ color: 0x17d6c3, transparent: true, opacity: .28 }));
         pad.position.y = -.35;
-        const light = new THREE.PointLight(0x17d6c3, 4, 6);
-        light.position.y = .45;
-        group.add(ring, pad, light);
+        fallback.add(ring, pad);
+        const light = new THREE.PointLight(0x17d6c3, 3.2, 6);
+        light.position.y = 1.15;
+        group.add(fallback, light);
+        group.userData.fallback = fallback;
+        group.userData.spinTarget = fallback;
+        this.mountModel(group, "exit");
         return group;
     }
 
     createPlayer() {
         const root = new THREE.Group();
+        const fallback = new THREE.Group();
         const body = new THREE.Mesh(new THREE.CapsuleGeometry(.36, .72, 8, 18), this.mats.player);
         body.position.y = .55;
         body.castShadow = true;
@@ -423,9 +524,166 @@ export class GameRenderer {
         sprite.position.set(0, 1.08, .02);
         sprite.scale.set(1.18, 1.78, 1);
         sprite.renderOrder = 10;
-        root.add(body, head, eyeL, eyeR, glass, sprite);
+        fallback.add(body, head, eyeL, eyeR, glass, sprite);
+        fallback.userData.basePosition = fallback.position.clone();
+        fallback.userData.baseRotation = fallback.rotation.clone();
+        const shadow = this.createSoftShadow(1.12, .86);
+        root.add(shadow, fallback);
+        root.userData.fallback = fallback;
+        root.userData.visualRoot = fallback;
         root.userData.sprite = sprite;
+        this.mountModel(root, "player");
         return root;
+    }
+
+    createSoftShadow(width, depth) {
+        const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 32), this.mats.shadow);
+        shadow.rotation.x = -Math.PI / 2;
+        shadow.scale.set(width, depth, 1);
+        shadow.position.y = -.16;
+        shadow.renderOrder = -1;
+        return shadow;
+    }
+
+    preloadModel(key) {
+        const asset = this.modelAssets[key];
+        if (!asset) return Promise.resolve(null);
+        if (asset.promise) return asset.promise;
+        asset.promise = new Promise((resolve) => {
+            this.gltfLoader.load(asset.url, (gltf) => {
+                asset.scene = gltf.scene;
+                this.prepareModelAsset(asset.scene, key);
+                resolve(asset.scene);
+            }, undefined, (error) => {
+                asset.failed = true;
+                console.warn(`Unable to load ${key} model from ${asset.url}`, error);
+                resolve(null);
+            });
+        });
+        return asset.promise;
+    }
+
+    prepareModelAsset(root, key) {
+        root.traverse((child) => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = false;
+            child.frustumCulled = key !== "player";
+            if (child.geometry) child.geometry.userData.shared = true;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.filter(Boolean).forEach((material) => {
+                material.userData.shared = true;
+                if (material.emissiveMap) material.emissiveIntensity = Math.max(material.emissiveIntensity || 1, 1.15);
+                [
+                    material.map,
+                    material.normalMap,
+                    material.roughnessMap,
+                    material.metalnessMap,
+                    material.emissiveMap,
+                    material.aoMap
+                ].filter(Boolean).forEach((texture) => {
+                    texture.anisotropy = 1;
+                    texture.minFilter = THREE.LinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.generateMipmaps = false;
+                    texture.needsUpdate = true;
+                });
+            });
+        });
+    }
+
+    mountModel(root, key) {
+        const attach = () => {
+            const model = this.createModelInstance(key);
+            if (!model) return false;
+            if (root.userData.assetModel) {
+                root.remove(root.userData.assetModel);
+                this.disposeObject(root.userData.assetModel);
+            }
+            if (root.userData.fallback) root.userData.fallback.visible = false;
+            root.add(model);
+            root.userData.assetModel = model;
+            if (key === "player") {
+                root.userData.visualRoot = model;
+                root.userData.walkRig = this.collectPlayerRig(model);
+            }
+            return true;
+        };
+
+        if (attach()) return;
+        this.preloadModel(key).then(() => {
+            if (root.userData.disposed) return;
+            if (key === "player" && this.objects.player !== root) return;
+            if (key === "exit" && this.objects.exit !== root) return;
+            attach();
+        });
+    }
+
+    createModelInstance(key) {
+        const asset = this.modelAssets[key];
+        if (!asset?.scene) return null;
+        const model = cloneSkeleton(asset.scene);
+        model.rotation.set(...asset.rotation);
+        model.traverse((child) => {
+            if (!child.isMesh) return;
+            child.castShadow = false;
+            child.receiveShadow = false;
+            child.frustumCulled = key !== "player";
+        });
+        this.fitModelToBounds(model, asset);
+        return model;
+    }
+
+    fitModelToBounds(model, asset) {
+        model.updateMatrixWorld(true);
+        const startBox = new THREE.Box3().setFromObject(model);
+        const size = startBox.getSize(new THREE.Vector3());
+        const scale = asset.targetHeight && size.y ? asset.targetHeight / size.y : 1;
+        model.scale.multiplyScalar(scale);
+        model.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.x -= center.x;
+        model.position.z -= center.z;
+        model.position.y += (asset.yOffset || 0) - box.min.y;
+        model.updateMatrixWorld(true);
+        const fitted = new THREE.Box3().setFromObject(model);
+        model.userData.basePosition = model.position.clone();
+        model.userData.baseRotation = model.rotation.clone();
+        model.userData.modelTop = fitted.max.y;
+    }
+
+    collectPlayerRig(model) {
+        const rig = {
+            bones: {},
+            baseRotations: new Map()
+        };
+        const aliases = {
+            pelvis: "bip_pelvis",
+            spine: "bip_spine_0",
+            hipL: "bip_hip_L",
+            hipR: "bip_hip_R",
+            kneeL: "bip_knee_L",
+            kneeR: "bip_knee_R",
+            footL: "bip_foot_L",
+            footR: "bip_foot_R",
+            upperArmL: "bip_upperArm_L",
+            upperArmR: "bip_upperArm_R",
+            lowerArmL: "bip_lowerArm_L",
+            lowerArmR: "bip_lowerArm_R",
+            handL: "bip_hand_L",
+            handR: "bip_hand_R"
+        };
+        model.traverse((child) => {
+            if (!child.isBone) return;
+            Object.entries(aliases).forEach(([key, name]) => {
+                if (child.name === name) rig.bones[key] = child;
+            });
+        });
+        Object.values(rig.bones).forEach((bone) => {
+            rig.baseRotations.set(bone, bone.rotation.clone());
+        });
+        return rig;
     }
 
     syncState(state) {
@@ -532,20 +790,26 @@ export class GameRenderer {
             playerFrom = this.gridToWorld(move.from.x, move.from.y, this.baseY);
             playerTo = this.gridToWorld(move.to.x, move.to.y, this.baseY);
             player.position.copy(playerFrom);
+            player.userData.walking = true;
+            player.userData.walkPhase = 0;
         }
         if (turn && player) {
             rotationFrom = -turn.from.dir * Math.PI / 2;
             rotationTo = -turn.to.dir * Math.PI / 2;
             player.rotation.y = rotationFrom;
+            player.userData.turning = true;
+            player.userData.turnPhase = 0;
         }
         await this.tween(duration, (t) => {
             const eased = easeInOut(t);
             if (move && player) {
                 player.position.lerpVectors(playerFrom, playerTo, eased);
                 player.position.y = this.baseY + Math.sin(t * Math.PI) * .22;
+                player.userData.walkPhase = t;
             }
             if (turn && player) {
                 player.rotation.y = THREE.MathUtils.lerp(rotationFrom, rotationTo, eased);
+                player.userData.turnPhase = t;
             }
             guardStarts.forEach(({ mesh, from, to }) => {
                 if (!mesh) return;
@@ -562,6 +826,12 @@ export class GameRenderer {
                 projectile.scale.setScalar(1 + Math.sin(t * Math.PI) * .4);
             }
         });
+        if (player) {
+            player.userData.walking = false;
+            player.userData.turning = false;
+            player.userData.walkPhase = 0;
+            player.userData.turnPhase = 0;
+        }
         if (projectile) {
             this.fxGroup.remove(projectile);
             this.disposeObject(projectile);
@@ -645,15 +915,26 @@ export class GameRenderer {
 
     updateSettings(settings) {
         this.settings = settings;
+        this.applyRenderQuality();
         this.applyCamera(false);
         this.resize();
+    }
+
+    applyRenderQuality() {
+        if (!this.renderer) return;
+        this.renderer.shadowMap.enabled = this.settings.quality === "sharp";
     }
 
     resize() {
         const rect = this.host.getBoundingClientRect();
         const width = Math.max(320, Math.floor(rect.width));
         const height = Math.max(320, Math.floor(rect.height));
-        const ratio = this.settings.quality === "sharp" ? Math.min(2, window.devicePixelRatio || 1) : this.settings.quality === "light" ? 1 : Math.min(1.5, window.devicePixelRatio || 1);
+        const deviceRatio = window.devicePixelRatio || 1;
+        const ratio = this.settings.quality === "sharp"
+            ? Math.min(1.35, deviceRatio)
+            : this.settings.quality === "light"
+                ? Math.min(.85, deviceRatio)
+                : Math.min(1, deviceRatio);
         this.renderer.setPixelRatio(ratio);
         this.renderer.setSize(width, height, false);
         this.camera.aspect = width / height;
@@ -674,7 +955,10 @@ export class GameRenderer {
         this.objects.chips.forEach((chip, index) => {
             if (!chip.visible) return;
             chip.rotation.y += delta * 1.8;
-            chip.position.y = .92 + Math.sin(now * 2.4 + index) * .08;
+            const exitModel = this.objects.exit?.userData.assetModel;
+            const serverTop = exitModel ? this.objects.exit.position.y + (exitModel.userData.modelTop || 0) * this.objects.exit.scale.y : 0;
+            const baseY = chip.userData.onExit && exitModel ? serverTop + .3 : .92;
+            chip.position.y = baseY + Math.sin(now * 2.4 + index) * .08;
         });
         this.objects.guards.forEach((guard, index) => {
             guard.rotation.y = Math.sin(now * 1.5 + index) * .18;
@@ -684,16 +968,68 @@ export class GameRenderer {
             enemy.rotation.y = Math.sin(now * 2.6 + index) * .22;
         });
         if (this.objects.exit) {
-            this.objects.exit.rotation.y += delta * 1.1;
+            const spinTarget = this.objects.exit.userData.spinTarget;
+            if (spinTarget?.visible) spinTarget.rotation.y += delta * 1.1;
         }
         if (this.objects.player) {
-            this.objects.player.position.y += Math.sin(now * 2.2) * .0008;
+            this.updatePlayerPose(this.objects.player, now);
         }
         this.pathMarkers.forEach((mark, index) => {
             mark.scale.setScalar(1 + Math.sin(now * 3.3 + index * .34) * .18);
         });
+        this.environmentStrips.forEach((strip) => {
+            if (!strip.material) return;
+            strip.material.opacity = .46 + Math.sin(now * 1.8 + (strip.userData.phase || 0)) * .18;
+        });
         this.updateParticles(delta);
         this.updateDynamicMeshes();
+    }
+
+    updatePlayerPose(player, now) {
+        const visual = player.userData.visualRoot;
+        if (visual) {
+            const basePosition = visual.userData.basePosition || new THREE.Vector3();
+            const baseRotation = visual.userData.baseRotation || new THREE.Euler();
+            const walking = Boolean(player.userData.walking);
+            const walkPhase = (player.userData.walkPhase || 0) * Math.PI * 4;
+            const idlePhase = now * 2.2;
+            visual.position.copy(basePosition);
+            visual.rotation.copy(baseRotation);
+            visual.position.y += walking ? Math.abs(Math.sin(walkPhase)) * .085 : Math.sin(idlePhase) * .018;
+            visual.rotation.x += walking ? Math.sin(walkPhase) * .035 : Math.sin(idlePhase * .7) * .01;
+            if (player.userData.turning) {
+                visual.rotation.z += Math.sin((player.userData.turnPhase || 0) * Math.PI) * .08;
+            }
+        }
+
+        const rig = player.userData.walkRig;
+        if (!rig) return;
+        rig.baseRotations.forEach((rotation, bone) => {
+            bone.rotation.copy(rotation);
+        });
+        const bones = rig.bones;
+        const walking = Boolean(player.userData.walking);
+        const phase = walking ? (player.userData.walkPhase || 0) * Math.PI * 4 : now * 1.35;
+        const swing = Math.sin(phase);
+        const counter = Math.cos(phase);
+        const intensity = walking ? 1 : .12;
+        this.rotateBone(bones.hipL, "x", swing * .34 * intensity);
+        this.rotateBone(bones.hipR, "x", -swing * .34 * intensity);
+        this.rotateBone(bones.kneeL, "x", Math.max(0, -swing) * .42 * intensity);
+        this.rotateBone(bones.kneeR, "x", Math.max(0, swing) * .42 * intensity);
+        this.rotateBone(bones.footL, "x", -swing * .18 * intensity);
+        this.rotateBone(bones.footR, "x", swing * .18 * intensity);
+        this.rotateBone(bones.upperArmL, "x", -swing * .26 * intensity);
+        this.rotateBone(bones.upperArmR, "x", swing * .26 * intensity);
+        this.rotateBone(bones.lowerArmL, "x", -counter * .12 * intensity);
+        this.rotateBone(bones.lowerArmR, "x", counter * .12 * intensity);
+        this.rotateBone(bones.pelvis, "z", swing * .035 * intensity);
+        this.rotateBone(bones.spine, "z", -swing * .025 * intensity);
+    }
+
+    rotateBone(bone, axis, amount) {
+        if (!bone) return;
+        bone.rotation[axis] += amount;
     }
 
     updateChaseCamera(alpha = .08) {
@@ -763,8 +1099,9 @@ export class GameRenderer {
     }
 
     disposeObject(object) {
+        object.userData.disposed = true;
         object.traverse((child) => {
-            if (child.geometry) child.geometry.dispose();
+            if (child.geometry && !child.geometry.userData.shared) child.geometry.dispose();
             if (child.material) {
                 if (Array.isArray(child.material)) child.material.forEach((mat) => this.disposeMaterial(mat));
                 else this.disposeMaterial(child.material);
