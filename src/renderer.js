@@ -19,6 +19,8 @@ const MODEL_ASSETS = {
     }
 };
 
+const EXTERNAL_MODELS_ENABLED = new URLSearchParams(window.location.search).get("models") === "1";
+
 export class GameRenderer {
     constructor({ canvas, host, settings }) {
         this.canvas = canvas;
@@ -75,7 +77,6 @@ export class GameRenderer {
             player: null
         };
 
-        this.textureLoader = new THREE.TextureLoader();
         this.gltfLoader = new GLTFLoader();
         this.modelAssets = Object.fromEntries(Object.entries(MODEL_ASSETS).map(([key, config]) => [key, {
             ...config,
@@ -84,15 +85,9 @@ export class GameRenderer {
             failed: false
         }]));
         this.heroTexture = this.makeHeroFallbackTexture();
-        this.textureLoader.load("character.png", (texture) => {
-            texture.colorSpace = THREE.SRGBColorSpace;
-            this.heroTexture = texture;
-            if (this.objects.player?.userData.sprite) {
-                this.objects.player.userData.sprite.material.map = texture;
-                this.objects.player.userData.sprite.material.needsUpdate = true;
-            }
-        });
-        Object.keys(this.modelAssets).forEach((key) => this.preloadModel(key));
+        if (EXTERNAL_MODELS_ENABLED) {
+            Object.keys(this.modelAssets).forEach((key) => this.preloadModel(key));
+        }
         this.mats = this.makeMaterials();
         this.setupLights();
         this.resize();
@@ -593,6 +588,8 @@ export class GameRenderer {
     }
 
     mountModel(root, key) {
+        if (!EXTERNAL_MODELS_ENABLED) return;
+
         const attach = () => {
             const model = this.createModelInstance(key);
             if (!model) return false;
