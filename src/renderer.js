@@ -6,20 +6,18 @@ import { DIRS, bridgeAt, doorAt, laserAt, requiresAreOn, switchAt } from "./engi
 
 const MODEL_ASSETS = {
     player: {
-        url: "vendor/3d%20model%20for%20robot/source/deadnaut.glb",
+        url: "vendor/3d%20model%20for%20robot/source/deadnaut.fast.glb",
         targetHeight: 2.18,
         yOffset: -.18,
         rotation: [0, Math.PI, 0]
     },
     exit: {
-        url: "vendor/server_rack/scene.gltf",
+        url: "vendor/server_rack/server-rack.fast.glb",
         targetHeight: 2.05,
         yOffset: -.36,
         rotation: [0, Math.PI, 0]
     }
 };
-
-const EXTERNAL_MODELS_ENABLED = new URLSearchParams(window.location.search).get("models") === "1";
 
 export class GameRenderer {
     constructor({ canvas, host, settings }) {
@@ -85,9 +83,7 @@ export class GameRenderer {
             failed: false
         }]));
         this.heroTexture = this.makeHeroFallbackTexture();
-        if (EXTERNAL_MODELS_ENABLED) {
-            Object.keys(this.modelAssets).forEach((key) => this.preloadModel(key));
-        }
+        Object.keys(this.modelAssets).forEach((key) => this.preloadModel(key));
         this.mats = this.makeMaterials();
         this.setupLights();
         this.resize();
@@ -588,8 +584,6 @@ export class GameRenderer {
     }
 
     mountModel(root, key) {
-        if (!EXTERNAL_MODELS_ENABLED) return;
-
         const attach = () => {
             const model = this.createModelInstance(key);
             if (!model) return false;
