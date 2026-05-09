@@ -208,6 +208,7 @@ function hazardAtPlayer(level, state) {
     if (guardAt(state, state.x, state.y)) return "guard";
     if (enemyAt(state, state.x, state.y)) return "enemy reached Nova";
     if (laserAt(level, state, state.x, state.y)) return "laser";
+    if (hiddenTrapAt(level, state.x, state.y)) return "hidden trap";
     const watcher = state.guards.find((guard) => guard.vision && guardSees(level, state, guard));
     if (watcher) return `${watcher.name || "guard"} vision`;
     return "";
@@ -275,6 +276,10 @@ export function laserAt(level, state, x, y) {
         const active = laser.active || [0];
         return active.includes(state.tick % period);
     });
+}
+
+export function hiddenTrapAt(level, x, y) {
+    return (level.hiddenTraps || []).some((trap) => trap.x === x && trap.y === y);
 }
 
 export function doorAt(level, x, y) {

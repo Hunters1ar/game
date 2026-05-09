@@ -19,6 +19,7 @@ import {
     saveProgress,
     saveSettings
 } from "./storage.js";
+import { AdminConsole } from "./admin-console.js";
 
 const $ = (id) => document.getElementById(id);
 const query = new URLSearchParams(window.location.search);
@@ -49,10 +50,12 @@ const els = {
     btnRun: $("btnRun"),
     btnReset: $("btnReset"),
     btnCamera: $("btnCamera"),
+    btnAdmin: $("btnAdmin"),
     btnReference: $("btnReference"),
     btnSettings: $("btnSettings"),
     btnResetProgress: $("btnResetProgress"),
     toast: $("toast"),
+    adminModal: $("adminModal"),
     settingsModal: $("settingsModal"),
     referenceModal: $("referenceModal"),
     speedRange: $("speedRange"),
@@ -76,13 +79,23 @@ levelIndex = Math.min(levelIndex, Math.max(0, progress.unlocked - 1));
 let level = getLevel(levelIndex);
 let state = createState(level);
 let running = false;
+let customLevelActive = false;
 let audioCtx = null;
 
 const renderer = new GameRenderer({ canvas: els.canvas, host: els.host, settings });
+const adminConsole = new AdminConsole({
+    modal: els.adminModal,
+    onPlay: loadAdminLevel,
+    onToast: showToast
+});
 
 bindUI();
 applySettingsToUI();
 loadLevel(levelIndex);
+if (query.get("admin") === "1") {
+    adminConsole.open(() => level);
+    openModal(els.adminModal);
+}
 postEmbedEvent("ready", { level: levelIndex + 1, levelCount: LEVELS.length });
 
 function bindUI() {
@@ -100,6 +113,10 @@ function bindUI() {
         saveSettings(settings);
         showToast(`Camera: ${mode}`);
     });
+    els.btnAdmin.addEventListener("click", () => {
+        adminConsole.open(() => level);
+        openModal(els.adminModal);
+    });
     els.btnReference.addEventListener("click", () => openModal(els.referenceModal));
     els.btnSettings.addEventListener("click", () => openModal(els.settingsModal));
     els.btnResetProgress.addEventListener("click", () => {
@@ -112,7 +129,7 @@ function bindUI() {
     document.querySelectorAll("[data-close]").forEach((btn) => {
         btn.addEventListener("click", () => closeModal($(btn.dataset.close)));
     });
-    [els.settingsModal, els.referenceModal].forEach((modal) => {
+    [els.settingsModal, els.referenceModal, els.adminModal].forEach((modal) => {
         modal.addEventListener("click", (event) => {
             if (event.target === modal) closeModal(modal);
         });
@@ -175,6 +192,7 @@ function bindUI() {
         if (event.key === "Escape") {
             closeModal(els.settingsModal);
             closeModal(els.referenceModal);
+            closeModal(els.adminModal);
         }
         if (!settings.freeRun || running || isTyping()) return;
         if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") directCommand("forward");
@@ -197,6 +215,7 @@ function applySettingsToUI() {
 }
 
 function loadLevel(index) {
+    customLevelActive = false;
     levelIndex = index;
     level = getLevel(index);
     state = createState(level);
@@ -209,6 +228,21 @@ function loadLevel(index) {
     updateLineNums();
     clearHighlight();
     logConsole("Ready. Write your own script for this floor.", "info", true);
+    updatePreview();
+}
+
+function loadAdminLevel(nextLevel) {
+    customLevelActive = true;
+    levelIndex = -1;
+    level = nextLevel;
+    state = createState(level);
+    running = false;
+    els.codeArea.value = level.starter || level.template || "";
+    renderer.setLevel(level, state);
+    updateLevelUI();
+    updateLineNums();
+    clearHighlight();
+    logConsole("Admin draft loaded. Play-test this floor from the editor.", "info", true);
     updatePreview();
 }
 
@@ -247,8 +281,10 @@ async function runCode() {
 
     if (state.complete) {
         const stars = starsFor(level, state.actions);
-        recordWin(progress, levelIndex, state.actions, stars, LEVELS.length);
-        buildLevelButtons();
+        if (!customLevelActive) {
+            recordWin(progress, levelIndex, state.actions, stars, LEVELS.length);
+            buildLevelButtons();
+        }
         updateStats();
         logConsole(`Floor complete: ${state.actions} actions, ${starText(stars)}.`, "ok");
         showToast(`Floor complete: ${starText(stars)}`);
@@ -333,8 +369,10 @@ async function directCommand(kind) {
         playTone("error");
     } else if (isComplete(level, state)) {
         const stars = starsFor(level, state.actions);
-        recordWin(progress, levelIndex, state.actions, stars, LEVELS.length);
-        buildLevelButtons();
+        if (!customLevelActive) {
+            recordWin(progress, levelIndex, state.actions, stars, LEVELS.length);
+            buildLevelButtons();
+        }
         showToast(`Floor complete: ${starText(stars)}`);
         logConsole(`Floor complete: ${state.actions} actions, ${starText(stars)}.`, "ok");
         postEmbedEvent("level-complete", { level: levelIndex + 1, actions: state.actions, stars });
@@ -343,7 +381,7 @@ async function directCommand(kind) {
 }
 
 function updateLevelUI() {
-    els.floorLabel.textContent = `Floor ${levelIndex + 1} / ${LEVELS.length}`;
+    els.floorLabel.textContent = customLevelActive ? "Admin Draft" : `Floor ${levelIndex + 1} / ${LEVELS.length}`;
     els.levelName.textContent = level.name;
     els.levelSize.textContent = `${level.grid} x ${level.grid}`;
     els.guardStat.textContent = String((level.guards || []).length + (level.enemies || []).length);
@@ -390,7 +428,7 @@ function buildLevelButtons() {
         btn.className = "level-btn";
         btn.title = item.name;
         btn.textContent = String(index + 1);
-        if (index === levelIndex) btn.classList.add("active");
+        if (!customLevelActive && index === levelIndex) btn.classList.add("active");
         if (index >= progress.unlocked) btn.classList.add("locked");
         const stars = progress.levels[index]?.bestStars || 0;
         if (stars) {

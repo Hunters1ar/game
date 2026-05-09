@@ -41,6 +41,7 @@
             </div>
             <div class="level-strip" id="levelBtns" aria-label="Level selector"></div>
             <div class="top-actions">
+                <button class="icon-btn" id="btnAdmin" title="Admin console" aria-label="Admin console"><i class="fa-solid fa-map"></i></button>
                 <button class="icon-btn" id="btnReference" title="Command reference" aria-label="Command reference"><i class="fa-solid fa-book"></i></button>
                 <button class="icon-btn" id="btnSettings" title="Game settings" aria-label="Game settings"><i class="fa-solid fa-sliders"></i></button>
             </div>
@@ -178,6 +179,58 @@
                 <button class="icon-btn" data-close="referenceModal" aria-label="Close reference"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body ref-list" id="referenceList"></div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop admin-backdrop" id="adminModal">
+        <div class="modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
+            <div class="modal-head">
+                <h3 id="adminTitle">Admin Console</h3>
+                <button class="icon-btn" data-close="adminModal" aria-label="Close admin console"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="admin-body">
+                <aside class="admin-panel">
+                    <div class="admin-fields">
+                        <label>Name<input id="adminLevelName" type="text"></label>
+                        <label>Grid<input id="adminGridSize" type="number" min="4" max="12"></label>
+                        <label>Mission<input id="adminMission" type="text"></label>
+                        <label>3-Star<input id="adminStarThree" type="number" min="1" max="99"></label>
+                        <label>2-Star<input id="adminStarTwo" type="number" min="1" max="120"></label>
+                        <label>1-Star<input id="adminStarOne" type="number" min="1" max="150"></label>
+                        <label>Start Dir
+                            <select id="adminStartDir">
+                                <option value="0">North</option>
+                                <option value="1">East</option>
+                                <option value="2">South</option>
+                                <option value="3">West</option>
+                            </select>
+                        </label>
+                        <label>Circuit<input id="adminCircuit" type="text" maxlength="4" value="A"></label>
+                    </div>
+                    <div class="admin-palette" id="adminPalette" aria-label="Admin tools"></div>
+                    <div class="admin-actions">
+                        <button type="button" id="adminBtnPlay"><i class="fa-solid fa-play"></i>Play</button>
+                        <button type="button" id="adminBtnSave"><i class="fa-solid fa-floppy-disk"></i>Save</button>
+                        <button type="button" id="adminBtnNew"><i class="fa-solid fa-file"></i>New</button>
+                        <button type="button" id="adminBtnLoadCurrent"><i class="fa-solid fa-download"></i>Load</button>
+                        <button type="button" id="adminBtnExport"><i class="fa-solid fa-code"></i>Export</button>
+                        <button type="button" id="adminBtnImport"><i class="fa-solid fa-upload"></i>Import</button>
+                    </div>
+                </aside>
+                <section class="admin-canvas-panel">
+                    <div class="admin-strip">
+                        <span>Active</span>
+                        <b id="adminActiveTool">Start</b>
+                    </div>
+                    <div class="admin-grid-wrap">
+                        <div class="admin-grid" id="adminGrid"></div>
+                    </div>
+                    <div class="admin-inspector" id="adminInspector"></div>
+                </section>
+                <aside class="admin-json-panel">
+                    <textarea id="adminJson" spellcheck="false"></textarea>
+                </aside>
+            </div>
         </div>
     </div>
 

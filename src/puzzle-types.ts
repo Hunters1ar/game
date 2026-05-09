@@ -77,6 +77,7 @@ export interface Level {
     enemies: Enemy[];
     cables: Cable[];
     lasers: Laser[];
+    hiddenTraps: Point[];
     requiredPower: string[];
     allowed: CommandKey[];
     stars: { three: number; two: number; one: number };
